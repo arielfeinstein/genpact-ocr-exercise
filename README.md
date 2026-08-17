@@ -2,6 +2,28 @@
 
 *Assumptions, edge cases, and use of AI*
 
+## How to run
+
+Create and activate a virtual environment, then install the dependencies:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+Run the module directly to process and print the included sample records:
+
+```bash
+python solution.py
+```
+
+The tests require `pytest`, which is included in `requirements.txt`. Run them with:
+
+```bash
+python -m pytest -q
+```
+
 ## Assumptions
 
 I treated OCR output as untrusted and assumed USD amounts. Negatives are valid, while values outside -$10 million to $10 million are invalid. Year-first dates use year-month-day; year-last dates use US month-day-year. Future dates and dates more than 100 years old are flagged. Invoice IDs are unique, so every duplicate occurrence is flagged. Valid unchanged records go only to the cleaned output; safely corrected records go to both outputs with a warning; invalid records or those missing required values go only to the flagged output with an error reason.
