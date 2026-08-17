@@ -338,9 +338,7 @@ def process_records(raw_records: list[dict]) -> tuple[list[dict], list[dict]]:
                 flags=flags,
             )
         )
-        # Every normalized ID participates, even if another field is invalid.
-        # Otherwise a valid occurrence could be accepted despite an ambiguous
-        # second occurrence carrying the same invoice ID.
+        
         if invoice_id is not None:
             invoice_id_map.setdefault(invoice_id, []).append(source_index)
 
