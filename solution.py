@@ -83,7 +83,6 @@ _MONTHS = {
     "dec": 12,
     "december": 12,
 }
-_EXPECTED_FIELDS = ("invoice_id", "amount", "date", "vendor")
 
 
 def _flag(field_name: str, reason: str, severity: Severity) -> Flag:
@@ -324,12 +323,10 @@ def process_records(raw_records: list[dict]) -> tuple[list[dict], list[dict]]:
     invoice_id_map: dict[str, list[int]] = {}
 
     for source_index, raw_record in enumerate(raw_records):
-        raw = {field_name: raw_record.get(field_name) for field_name in _EXPECTED_FIELDS}
-
-        invoice_id, invoice_flags = _clean_invoice_id(raw["invoice_id"])
-        amount, amount_flags = _clean_amount(raw["amount"])
-        date_value, date_flags = _clean_date(raw["date"])
-        vendor, vendor_flags = _clean_vendor(raw["vendor"])
+        invoice_id, invoice_flags = _clean_invoice_id(raw_record.get("invoice_id"))
+        amount, amount_flags = _clean_amount(raw_record.get("amount"))
+        date_value, date_flags = _clean_date(raw_record.get("date"))
+        vendor, vendor_flags = _clean_vendor(raw_record.get("vendor"))
         flags = invoice_flags + amount_flags + date_flags + vendor_flags
 
         states.append(
