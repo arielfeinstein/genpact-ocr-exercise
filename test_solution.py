@@ -48,10 +48,71 @@ def test_required_sample(monkeypatch):
 
     clean, flagged = solution.process_records(raw_records)
 
-    assert [item["invoice_id"] for item in clean] == ["INV-1002", "INV-1007"]
-    assert len(flagged) == 7
-    assert flagged[0]["reason"] == "record; duplicate invoice_id; error"
-    assert flagged[1]["reason"] == "amount; OCR correction applied; warning"
+    assert clean == [
+        {
+            "invoice_id": "INV-1002",
+            "amount": 950.5,
+            "date": date(2024, 1, 6),
+            "vendor": "Beta LLC",
+        },
+        {
+            "invoice_id": "INV-1007",
+            "amount": 3200.0,
+            "date": date(2019, 1, 10),
+            "vendor": "Acme Corp",
+        },
+    ]
+    assert flagged == [
+        {
+            "invoice_id": "INV-1001",
+            "amount": 1200.0,
+            "date": date(2024, 1, 5),
+            "vendor": "Acme Corp",
+            "reason": "record; duplicate invoice_id; error",
+        },
+        {
+            "invoice_id": "INV-1002",
+            "amount": 950.5,
+            "date": date(2024, 1, 6),
+            "vendor": "Beta LLC",
+            "reason": "amount; OCR correction applied; warning",
+        },
+        {
+            "invoice_id": "INV-1003",
+            "amount": None,
+            "date": date(2024, 1, 7),
+            "vendor": "Acme Corp",
+            "reason": "amount; missing or unavailable value; error",
+        },
+        {
+            "invoice_id": "INV-1004",
+            "amount": 2340.0,
+            "date": date(2024, 1, 8),
+            "vendor": None,
+            "reason": "vendor; missing or unavailable value; error",
+        },
+        {
+            "invoice_id": "INV-1001",
+            "amount": 1200.0,
+            "date": date(2024, 1, 5),
+            "vendor": "Acme Corp",
+            "reason": "record; duplicate invoice_id; error",
+        },
+        {
+            "invoice_id": "INV-1005",
+            "amount": -450.0,
+            "date": None,
+            "vendor": "Gamma Inc",
+            "reason": "date; invalid date; error",
+        },
+        {
+            "invoice_id": "INV-1006",
+            "amount": None,
+            "date": date(2024, 1, 9),
+            "vendor": "Delta Co",
+            "reason": "amount; missing or unavailable value; error",
+        },
+    ]
 
 
 def test_input_validation_and_immutability():
