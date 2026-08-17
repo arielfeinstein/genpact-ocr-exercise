@@ -21,6 +21,6 @@ I spent most of the task iterating on a detailed specification. AI helped refine
 - https://chatgpt.com/share/6a82911c-5950-83eb-838b-eea634b37f12
 - https://chatgpt.com/share/6a829179-f880-83ed-ad58-b4cbf14d6fae
 
-Note: I have a local conversation stored in local_ai_logs/implement.jsonl but it's very hard to read
+Note: I have a local conversation stored in [local_ai_logs/implement.jsonl](local_ai_logs/implement.jsonl) but it's very hard to read
       for a human but exported as required.
       It is a codex session for generating code locally. Can't share via link.
