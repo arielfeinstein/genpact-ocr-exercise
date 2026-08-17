@@ -57,9 +57,9 @@ def test_required_sample(monkeypatch):
 def test_input_validation_and_immutability():
     """Invalid containers raise TypeError and valid input remains unchanged."""
     with pytest.raises(TypeError):
-        solution.process_records({})
+        solution.process_records({})  # type: ignore[arg-type]
     with pytest.raises(TypeError):
-        solution.process_records([record(), None])
+        solution.process_records([record(), None])  # type: ignore[arg-type]
 
     raw = [record() | {"extra": ["untouched"]}]
     original = copy.deepcopy(raw)
