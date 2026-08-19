@@ -20,14 +20,6 @@ class Flag:
     severity: Severity
 
 
-@dataclass(frozen=True)
-class CleanRecord:
-    invoice_id: str
-    amount: float
-    date: date
-    vendor: str
-
-
 @dataclass
 class FlaggedRecord:
     invoice_id: str | None
@@ -36,14 +28,17 @@ class FlaggedRecord:
     vendor: str | None
     flags: list[Flag] = field(default_factory=list)
 
+    @property
+    def has_error(self) -> bool:
+        return any(flag.severity == "error" for flag in self.flags)
 
-@dataclass
-class _RecordState:
-    invoice_id: str | None
-    amount: float | None
-    date: date | None
-    vendor: str | None
-    flags: list[Flag]
+    @property
+    def reason(self) -> str:
+        """Flatten structured flags using the public semicolon-delimited format."""
+        parts: list[str] = []
+        for flag in self.flags:
+            parts.extend((flag.field, flag.reason, flag.severity))
+        return "; ".join(parts)
 
 
 _INVOICE_ID_RE = re.compile(r"^INV-[1-9][0-9]*$")
@@ -85,21 +80,16 @@ _MONTHS = {
 }
 
 
-def _flag(field_name: str, reason: str, severity: Severity) -> Flag:
-    """Create a structured validation or normalization flag."""
-    return Flag(field=field_name, reason=reason, severity=severity)
-
-
 def _prepare_string(raw_value: object, field_name: str) -> tuple[str | None, list[Flag]]:
     """Apply type and general missing-value validation."""
     if raw_value is None:
-        return None, [_flag(field_name, "missing or unavailable value", "error")]
+        return None, [Flag(field_name, "missing or unavailable value", "error")]
     if not isinstance(raw_value, str):
-        return None, [_flag(field_name, "invalid field type", "error")]
+        return None, [Flag(field_name, "invalid field type", "error")]
 
     value = raw_value.strip()
     if not value or value.upper() in {"N/A", "NA"}:
-        return None, [_flag(field_name, "missing or unavailable value", "error")]
+        return None, [Flag(field_name, "missing or unavailable value", "error")]
     return value, []
 
 
@@ -111,7 +101,7 @@ def _clean_invoice_id(raw_value: object) -> tuple[str | None, list[Flag]]:
 
     upper_value = value.upper()
     if upper_value != value:
-        flags.append(_flag("invoice_id", "case normalized", "warning"))
+        flags.append(Flag("invoice_id", "case normalized", "warning"))
     value = upper_value
 
     if re.search(r"\s", value):
@@ -119,12 +109,17 @@ def _clean_invoice_id(raw_value: object) -> tuple[str | None, list[Flag]]:
         if _INVOICE_ID_RE.fullmatch(without_whitespace):
             value = without_whitespace
             flags.append(
-                _flag("invoice_id", "internal whitespace removed", "warning")
+                Flag("invoice_id", "internal whitespace removed", "warning")
             )
 
     if not _INVOICE_ID_RE.fullmatch(value):
-        flags.append(_flag("invoice_id", "invalid invoice_id format", "error"))
-        return None, flags
+        corrected = value.replace("O", "0").replace("S", "5")
+        if corrected != value and _INVOICE_ID_RE.fullmatch(corrected):
+            value = corrected
+            flags.append(Flag("invoice_id", "OCR correction applied", "warning"))
+        else:
+            flags.append(Flag("invoice_id", "invalid invoice_id format", "error"))
+            return None, flags
     return value, flags
 
 
@@ -142,7 +137,7 @@ def _remove_currency_indicator(value: str) -> str:
 
 def _numeric_whitespace_is_removable(value: str) -> bool:
     """Return whether numeric-token whitespace can be removed unambiguously."""
-    numeric_chars = "0123456789O.,-"
+    numeric_chars = "0123456789OS.,-"
     for match in re.finditer(r"\s+", value):
         if (
             match.start() == 0
@@ -153,7 +148,7 @@ def _numeric_whitespace_is_removable(value: str) -> bool:
             return False
 
     candidate = re.sub(r"\s+", "", value)
-    corrected_candidate = candidate.replace("O", "0")
+    corrected_candidate = candidate.replace("O", "0").replace("S", "5")
     return _AMOUNT_RE.fullmatch(corrected_candidate) is not None
 
 
@@ -168,25 +163,25 @@ def _clean_amount(raw_value: object) -> tuple[float | None, list[Flag]]:
     if re.search(r"\s", value) and _numeric_whitespace_is_removable(value):
         value = re.sub(r"\s+", "", value)
         flags.append(
-            _flag("amount", "whitespace removed from numeric value", "warning")
+            Flag("amount", "whitespace removed from numeric value", "warning")
         )
 
-    if "O" in value:
-        corrected = value.replace("O", "0")
+    if "O" in value or "S" in value:
+        corrected = value.replace("O", "0").replace("S", "5")
         if _AMOUNT_RE.fullmatch(corrected):
             value = corrected
-            flags.append(_flag("amount", "OCR correction applied", "warning"))
+            flags.append(Flag("amount", "OCR correction applied", "warning"))
 
     if not _AMOUNT_RE.fullmatch(value):
-        flags.append(_flag("amount", "invalid amount format", "error"))
+        flags.append(Flag("amount", "invalid amount format", "error"))
         return None, flags
 
     amount = float(value.replace(",", ""))
     if not math.isfinite(amount):
-        flags.append(_flag("amount", "invalid amount format", "error"))
+        flags.append(Flag("amount", "invalid amount format", "error"))
         return None, flags
     if not -10_000_000.00 <= amount <= 10_000_000.00:
-        flags.append(_flag("amount", "amount outside allowed range", "error"))
+        flags.append(Flag("amount", "amount outside allowed range", "error"))
     return amount, flags
 
 
@@ -269,17 +264,17 @@ def _clean_date(raw_value: object) -> tuple[date | None, list[Flag]]:
             correction_applied = parsed is not None
 
     if parsed is None:
-        flags.append(_flag("date", "invalid date", "error"))
+        flags.append(Flag("date", "invalid date", "error"))
         return None, flags
 
     if correction_applied:
-        flags.append(_flag("date", "OCR correction applied", "warning"))
+        flags.append(Flag("date", "OCR correction applied", "warning"))
 
     processing_date = date.today()
     if parsed > processing_date:
-        flags.append(_flag("date", "future date", "warning"))
+        flags.append(Flag("date", "future date", "warning"))
     elif parsed < _hundred_year_cutoff(processing_date):
-        flags.append(_flag("date", "date older than 100 years", "warning"))
+        flags.append(Flag("date", "date older than 100 years", "warning"))
     return parsed, flags
 
 
@@ -291,20 +286,12 @@ def _clean_vendor(raw_value: object) -> tuple[str | None, list[Flag]]:
 
     value = re.sub(r"\s+", " ", value)
     if len(value) > 100:
-        flags.append(_flag("vendor", "vendor exceeds 100 characters", "error"))
+        flags.append(Flag("vendor", "vendor exceeds 100 characters", "error"))
     if not any(character.isalnum() for character in value):
         flags.append(
-            _flag("vendor", "vendor contains no alphanumeric characters", "error")
+            Flag("vendor", "vendor contains no alphanumeric characters", "error")
         )
     return value, flags
-
-
-def _serialize_flags(flags: list[Flag]) -> str:
-    """Flatten structured flags using the public semicolon-delimited format."""
-    parts: list[str] = []
-    for flag in flags:
-        parts.extend((flag.field, flag.reason, flag.severity))
-    return "; ".join(parts)
 
 
 def process_records(raw_records: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -319,7 +306,7 @@ def process_records(raw_records: list[dict]) -> tuple[list[dict], list[dict]]:
     if any(not isinstance(raw_record, dict) for raw_record in raw_records):
         raise TypeError("every raw record must be a dictionary")
 
-    states: list[_RecordState] = []
+    states: list[FlaggedRecord] = []
     invoice_id_map: dict[str, list[int]] = {}
 
     for source_index, raw_record in enumerate(raw_records):
@@ -330,7 +317,7 @@ def process_records(raw_records: list[dict]) -> tuple[list[dict], list[dict]]:
         flags = invoice_flags + amount_flags + date_flags + vendor_flags
 
         states.append(
-            _RecordState(
+            FlaggedRecord(
                 invoice_id=invoice_id,
                 amount=amount,
                 date=date_value,
@@ -338,7 +325,7 @@ def process_records(raw_records: list[dict]) -> tuple[list[dict], list[dict]]:
                 flags=flags,
             )
         )
-        
+
         if invoice_id is not None:
             invoice_id_map.setdefault(invoice_id, []).append(source_index)
 
@@ -346,49 +333,23 @@ def process_records(raw_records: list[dict]) -> tuple[list[dict], list[dict]]:
         if len(source_indexes) > 1:
             for source_index in source_indexes:
                 states[source_index].flags.append(
-                    _flag("record", "duplicate invoice_id", "error")
+                    Flag("record", "duplicate invoice_id", "error")
                 )
 
     clean_records: list[dict] = []
     flagged_records: list[dict] = []
     for state in states:
-        has_error = any(flag.severity == "error" for flag in state.flags)
         normalized = {
             "invoice_id": state.invoice_id,
             "amount": state.amount,
             "date": state.date,
             "vendor": state.vendor,
         }
-        if not has_error:
+        if not state.has_error:
             # The absence of errors guarantees all required normalized values exist.
-            clean = CleanRecord(
-                invoice_id=state.invoice_id,  # type: ignore[arg-type]
-                amount=state.amount,  # type: ignore[arg-type]
-                date=state.date,  # type: ignore[arg-type]
-                vendor=state.vendor,  # type: ignore[arg-type]
-            )
-            clean_records.append(
-                {
-                    "invoice_id": clean.invoice_id,
-                    "amount": clean.amount,
-                    "date": clean.date,
-                    "vendor": clean.vendor,
-                }
-            )
+            clean_records.append(normalized)
         if state.flags:
-            flagged = FlaggedRecord(
-                invoice_id=state.invoice_id,
-                amount=state.amount,
-                date=state.date,
-                vendor=state.vendor,
-                flags=state.flags,
-            )
-            flagged_records.append(
-                {
-                    **normalized,
-                    "reason": _serialize_flags(flagged.flags),
-                }
-            )
+            flagged_records.append({**normalized, "reason": state.reason})
 
     return clean_records, flagged_records
 
@@ -405,7 +366,7 @@ if __name__ == "__main__":
         {"invoice_id": "INV-1001", "amount": "$1,200.00", "date": "2024-01-05", "vendor": "Acme Corp"},
         {"invoice_id": "INV-1005", "amount": "-450.00", "date": "2024-13-40", "vendor": "Gamma Inc"},
         {"invoice_id": "INV-1006", "amount": " ", "date": "2024/01/09", "vendor": "Delta Co"},
-        {"invoice_id": "INV-1007", "amount": "3200.00", "date": "2019-01-10", "vendor": "Acme Corp"},
+        {"invoice_id": "INV-1007", "amount": "3200.00", "date": "2019-01-10", "vendor": "Acme Corp"}
     ]
 
     print("Inputs:")

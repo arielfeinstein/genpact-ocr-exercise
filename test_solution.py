@@ -155,6 +155,29 @@ def test_invoice_id_normalization_and_flag_order():
     assert solution.process_records([record("INV-0")])[0] == []
 
 
+def test_invoice_id_ocr_correction():
+    """"O" and "S" OCR misreads in invoice IDs are repaired like the date cleaner."""
+    clean, flagged = solution.process_records([record("inv-1o0s")])
+
+    assert clean[0]["invoice_id"] == "INV-1005"
+    assert flagged[0]["reason"] == (
+        "invoice_id; case normalized; warning; "
+        "invoice_id; OCR correction applied; warning"
+    )
+
+    assert solution.process_records([record("INV-1O0S")])[0] == [
+        {
+            "invoice_id": "INV-1005",
+            "amount": 1.0,
+            "date": date(2024, 1, 1),
+            "vendor": "Vendor",
+        }
+    ]
+
+    # A value that still fails to match after correction remains an error.
+    assert solution.process_records([record("INV-1O0SX")])[0] == []
+
+
 def test_amount_formats_corrections_and_range():
     """Accepted amount forms normalize and invalid or extreme values are flagged."""
     values = [
@@ -164,6 +187,8 @@ def test_amount_formats_corrections_and_range():
         "1 200.00",
         "-450.00",
         "95O.5",
+        "9S0.5",
+        "95S .5",
     ]
     rows = [
         record(f"INV-{index + 1}", value)
@@ -179,10 +204,15 @@ def test_amount_formats_corrections_and_range():
         1200.0,
         -450.0,
         950.5,
+        950.5,
+        955.5,
     ]
-    assert len(flagged) == 2
+    assert len(flagged) == 4
     assert "whitespace removed" in flagged[0]["reason"]
     assert "OCR correction applied" in flagged[1]["reason"]
+    assert "OCR correction applied" in flagged[2]["reason"]
+    assert "whitespace removed" in flagged[3]["reason"]
+    assert "OCR correction applied" in flagged[3]["reason"]
 
     for invalid in ("12,34", "+1", "1e3", "(1)", "12.00.50", "EUR 1"):
         assert solution.process_records([record(amount=invalid)])[0] == []
